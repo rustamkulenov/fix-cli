@@ -28,7 +28,7 @@ fn main() -> std::io::Result<()> {
         };
 
         // Standard header
-        let sh = read_standard_header(&mut br)?;
+        let sh = read_standard_header(&mut br, SOH)?;
 
         // Content
         if content_buf.len() < sh.body_length {
@@ -40,7 +40,7 @@ fn main() -> std::io::Result<()> {
         let mut start = 0;
 
         while start < sh.body_length {
-            let field = get_field(&content_slice[start..]);
+            let field = get_field(&content_slice[start..], SOH);
             let tv = field_to_tag_value(field);
 
             match tv.0 {
@@ -63,7 +63,7 @@ fn main() -> std::io::Result<()> {
         }
 
         // Checksum
-        let _crc = read_standard_trailer(&mut br)?;
+        let _crc = read_standard_trailer(&mut br, SOH)?;
         println!("{}", "CRC".truecolor(0, 100, 0));
     }
 
