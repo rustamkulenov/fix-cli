@@ -6,6 +6,8 @@ use std::io::BufReader;
 
 use fixcat::*;
 
+const MAX_MSG_LEN: usize = 1024 * 1024 * 5; // 5Mb
+
 fn main() -> std::io::Result<()> {
     let arguments: Vec<String> = env::args().collect();
 
@@ -15,6 +17,8 @@ fn main() -> std::io::Result<()> {
     } else {
         Box::new(BufReader::new(std::io::stdin()))
     };
+
+    let mut content_buf = vec![0u8; MAX_MSG_LEN];
 
     // For each message
     loop {
@@ -27,10 +31,13 @@ fn main() -> std::io::Result<()> {
         let sh = read_standard_header(&mut br)?;
 
         // Content
-        let mut content_buf = vec![0u8; sh.body_length];
-        br.read_exact(&mut content_buf)?;
-        while !content_buf.is_empty() {
-            let field = get_field(&content_buf);
+        //let mut content_buf = vec![0u8; sh.body_length];
+        let content_slice = &mut content_buf[0..sh.body_length];
+        br.read_exact(content_slice)?;
+        let mut start = 0;
+
+        while start < sh.body_length {
+            let field = get_field(&content_slice[start..]);
             let tv = field_to_tag_value(field);
 
             match tv.0 {
@@ -48,7 +55,8 @@ fn main() -> std::io::Result<()> {
                     "|".truecolor(80, 80, 80),
                 ),
             }
-            content_buf = content_buf[field.len() + 1..].to_vec();
+
+            start += field.len() + 1;
         }
 
         // Checksum
