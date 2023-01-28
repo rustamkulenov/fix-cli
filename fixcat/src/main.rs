@@ -6,7 +6,7 @@ use std::io::BufReader;
 
 use fixcat::*;
 
-const MAX_MSG_LEN: usize = 1024 * 1024 * 5; // 5Mb
+const INITIAL_CONTENT_SIZE: usize = 1024;
 
 fn main() -> std::io::Result<()> {
     let arguments: Vec<String> = env::args().collect();
@@ -18,7 +18,7 @@ fn main() -> std::io::Result<()> {
         Box::new(BufReader::new(std::io::stdin()))
     };
 
-    let mut content_buf = vec![0u8; MAX_MSG_LEN];
+    let mut content_buf = vec![0u8; INITIAL_CONTENT_SIZE];
 
     // For each message
     loop {
@@ -31,7 +31,10 @@ fn main() -> std::io::Result<()> {
         let sh = read_standard_header(&mut br)?;
 
         // Content
-        //let mut content_buf = vec![0u8; sh.body_length];
+        if content_buf.len() < sh.body_length {
+            // Resize buffer
+            content_buf = vec![0u8; sh.body_length];
+        }
         let content_slice = &mut content_buf[0..sh.body_length];
         br.read_exact(content_slice)?;
         let mut start = 0;
