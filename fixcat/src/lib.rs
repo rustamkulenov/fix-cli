@@ -8,22 +8,22 @@ pub const TAG_DELIMETER: u8 = 0x03d; // '='
 pub const SOH: u8 = 0x01;
 pub const PIPE: u8 = 0x7c; // '|'
 
-pub struct StandardHeader {
-    pub begin_string: String,             // 8
-    pub body_length: usize,               // 9
-    pub msg_type: String,                 // 35
-    pub secure_data_len: Option<usize>,   // 90
-    pub message_encoding: Option<String>, // 347
+pub struct StandardHeader<'a> {
+    pub begin_string: &'a str,             // 8
+    pub body_length: usize,                // 9
+    pub msg_type: &'a str,                 // 35
+    pub secure_data_len: Option<usize>,    // 90
+    pub message_encoding: Option<&'a str>, // 347
 }
 
-pub struct StandardTrailer {
-    pub check_sum: String,            // 10
+pub struct StandardTrailer<'a> {
+    pub check_sum: &'a str,           // 10
     pub signature_len: Option<usize>, // 93
-    pub signature: Option<String>,    // 89
+    pub signature: Option<&'a str>,   // 89
 }
 
-impl StandardTrailer {
-    pub fn new(check_sum: String) -> Self {
+impl<'a> StandardTrailer<'a> {
+    pub fn new(check_sum: &'a str) -> Self {
         Self {
             check_sum,
             signature_len: None,
@@ -32,12 +32,12 @@ impl StandardTrailer {
     }
 }
 
-impl StandardHeader {
-    pub fn new() -> Self {
+impl<'a> StandardHeader<'a> {
+    pub fn new(begin_string: &'a str, msg_type: &'a str, body_length: usize) -> Self {
         Self {
-            begin_string: String::from(""),
-            body_length: 0,
-            msg_type: String::from(""),
+            begin_string,
+            body_length,
+            msg_type,
             secure_data_len: None,
             message_encoding: None,
         }
@@ -47,30 +47,28 @@ impl StandardHeader {
 pub fn read_standard_header(
     br: &mut dyn BufRead,
     field_separator: u8,
-) -> std::io::Result<StandardHeader> {
+) -> std::io::Result<(StandardHeader, usize)> {
     let buf = br.fill_buf()?;
     if buf.len() == 0 {
         ()
     };
 
     let mut start: usize = 0;
-    let mut sh = StandardHeader::new();
 
     // BeginString(8)
     let token = get_field(&buf[start..], field_separator);
     start += token.len() + 1;
     let begin_string = field_to_tag_value(token);
-    let value = String::from_utf8(begin_string.1.to_vec()).unwrap();
     assert!(begin_string.0 == [0x038]); // BeginString(8)
-    sh.begin_string = value;
+    let begin_string = std::str::from_utf8(begin_string.1).unwrap();
 
     // BodyLength(9)
     let token = get_field(&buf[start..], field_separator);
     start += token.len() + 1;
     let body_length = field_to_tag_value(token);
-    let value = String::from_utf8(body_length.1.to_vec()).unwrap();
     assert!(body_length.0 == [0x039]); // BodyLength(9)
-    sh.body_length = value.parse().unwrap();
+    let body_length = std::str::from_utf8(body_length.1).unwrap();
+    let body_length: usize = body_length.parse().unwrap();
 
     // Will consume only 2 first tags to match msg size with BodyLength(9) tag value.
     // Next read of br will also contain MsgType(35) tag
@@ -79,19 +77,18 @@ pub fn read_standard_header(
     // MsgType(35)
     let token = get_field(&buf[start..], field_separator);
     let msg_type = field_to_tag_value(token);
-    let value = String::from_utf8(msg_type.1.to_vec()).unwrap();
     assert!(msg_type.0 == [0x033, 0x035]); // TAG_MSG_TYPE
-    sh.msg_type = value;
+    let msg_type = std::str::from_utf8(msg_type.1).unwrap();
 
-    br.consume(consume_amt);
+    let sh = StandardHeader::new(begin_string, msg_type, body_length);
 
-    Ok(sh)
+    Ok((sh, consume_amt))
 }
 
 pub fn read_standard_trailer(
     br: &mut dyn BufRead,
     field_separator: u8,
-) -> std::io::Result<StandardTrailer> {
+) -> std::io::Result<(StandardTrailer, usize)> {
     let buf = br.fill_buf()?;
     if buf.len() == 0 {
         ()
@@ -100,12 +97,11 @@ pub fn read_standard_trailer(
     let token = get_field(buf, field_separator);
     let crc = field_to_tag_value(token);
     assert!(crc.0 == [0x031, 0x030]); // CheckSum(10)
-    let crc_value = String::from_utf8(crc.1.to_vec()).unwrap();
+    let crc_value = std::str::from_utf8(crc.1).unwrap();
 
     let amt = token.len() + 1;
-    br.consume(amt);
 
-    Ok(StandardTrailer::new(crc_value))
+    Ok((StandardTrailer::new(crc_value), amt))
 }
 
 pub fn get_field(buf: &[u8], field_separator: u8) -> &[u8] {

@@ -28,18 +28,20 @@ fn main() -> std::io::Result<()> {
         };
 
         // Standard header
-        let sh = read_standard_header(&mut br, SOH)?;
+        let (sh, consume_amt) = read_standard_header(&mut br, SOH)?;
+        let body_length = sh.body_length;
+        br.consume(consume_amt);
 
         // Content
-        if content_buf.len() < sh.body_length {
+        if content_buf.len() < body_length {
             // Resize buffer
-            content_buf = vec![0u8; sh.body_length];
+            content_buf = vec![0u8; body_length];
         }
-        let content_slice = &mut content_buf[0..sh.body_length];
+        let content_slice = &mut content_buf[0..body_length];
         br.read_exact(content_slice)?;
         let mut start = 0;
 
-        while start < sh.body_length {
+        while start < body_length {
             let field = get_field(&content_slice[start..], SOH);
             let tv = field_to_tag_value(field);
 
@@ -63,7 +65,9 @@ fn main() -> std::io::Result<()> {
         }
 
         // Checksum
-        let _crc = read_standard_trailer(&mut br, SOH)?;
+        let (_crc, consume_amt) = read_standard_trailer(&mut br, SOH)?;
+        br.consume(consume_amt);
+
         println!("{}", "CRC".truecolor(0, 100, 0));
     }
 
