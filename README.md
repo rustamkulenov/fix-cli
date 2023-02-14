@@ -3,7 +3,7 @@ Command line tools for FIX protocol.
 
 ## Tools
 
-* [fixcat](/fixcat/) - prints FIX log file in more human readable form.
+* fixcat - prints FIX log file in more human readable form.
 
 ## Usage:
 
