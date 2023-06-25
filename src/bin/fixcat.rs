@@ -1,6 +1,7 @@
 use colored::*;
 use std::env;
 use std::fs::File;
+use std::io::Error;
 use std::io::prelude::*;
 use std::io::BufReader;
 
@@ -12,10 +13,13 @@ fn main() -> std::io::Result<()> {
     let arguments: Vec<String> = env::args().collect();
 
     let mut br: Box<dyn BufRead> = if atty::is(atty::Stream::Stdin) {
+        if arguments.len() < 2 {
+            return Err(Error::new(std::io::ErrorKind::InvalidInput, "Provide file as a first parameter or stdin stream."))
+        }
         let f = File::open(&arguments[1])?;
         Box::new(BufReader::new(f))
     } else {
-        Box::new(BufReader::new(std::io::stdin()))
+        Box::new(BufReader::with_capacity(10, std::io::stdin()))
     };
 
     let mut content_buf = vec![0u8; INITIAL_CONTENT_SIZE];
