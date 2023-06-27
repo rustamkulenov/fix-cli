@@ -1,9 +1,9 @@
 use colored::*;
 use std::env;
 use std::fs::File;
-use std::io::Error;
 use std::io::prelude::*;
 use std::io::BufReader;
+use std::io::Error;
 
 use fixcat::*;
 
@@ -14,27 +14,31 @@ fn main() -> std::io::Result<()> {
 
     let mut br: Box<dyn BufRead> = if atty::is(atty::Stream::Stdin) {
         if arguments.len() < 2 {
-            return Err(Error::new(std::io::ErrorKind::InvalidInput, "Provide file as a first parameter or stdin stream."))
+            return Err(Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Provide file as a first parameter or stdin stream.",
+            ));
         }
         let f = File::open(&arguments[1])?;
         Box::new(BufReader::new(f))
     } else {
-        Box::new(BufReader::with_capacity(10, std::io::stdin()))
+        Box::new(BufReader::new(std::io::stdin()))
     };
 
     let mut content_buf = vec![0u8; INITIAL_CONTENT_SIZE];
+    let mut head_buf: Vec<u8> = Vec::new();
 
     // For each message
     loop {
         let buf = br.fill_buf()?;
+
         if buf.len() == 0 {
             break;
         };
 
-        // Standard header
-        let (sh, consume_amt) = read_standard_header(&mut br, SOH)?;
+        head_buf.clear();
+        let sh = read_header(&mut br, SOH, &mut head_buf).unwrap();
         let body_length = sh.body_length;
-        br.consume(consume_amt);
 
         // Content
         if content_buf.len() < body_length {
@@ -64,14 +68,12 @@ fn main() -> std::io::Result<()> {
                     "|".truecolor(80, 80, 80),
                 ),
             }
-
+ 
             start += field.len() + 1;
         }
 
         // Checksum
-        let (_crc, consume_amt) = read_standard_trailer(&mut br, SOH)?;
-        br.consume(consume_amt);
-
+        read_crc(&mut br, SOH);
         println!("{}", "CRC".truecolor(0, 100, 0));
     }
 

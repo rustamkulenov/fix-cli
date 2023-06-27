@@ -1,3 +1,4 @@
+pub mod quickfix_spec;
 mod tests;
 
 use std::io::prelude::*;
@@ -33,75 +34,41 @@ impl<'a> StandardTrailer<'a> {
 }
 
 impl<'a> StandardHeader<'a> {
-    pub fn new(begin_string: &'a str, msg_type: &'a str, body_length: usize) -> Self {
+    pub fn new(begin_string: &'a str, body_length: usize) -> Self {
         Self {
             begin_string,
             body_length,
-            msg_type,
+            msg_type: "",
             secure_data_len: None,
             message_encoding: None,
         }
     }
 }
 
-pub fn read_standard_header(
+pub fn read_header<'a>(
     br: &mut dyn BufRead,
     field_separator: u8,
-) -> std::io::Result<(StandardHeader, usize)> {
-    let buf = br.fill_buf()?;
-    if buf.len() == 0 {
-        ()
-    };
+    vec: &'a mut Vec<u8>,
+) -> std::io::Result<StandardHeader<'a>> {
+    let p1 = br.read_until(field_separator, vec).unwrap();
+    let p2 = br.read_until(field_separator, vec).unwrap() + p1;
 
-    let mut start: usize = 0;
-
-    // BeginString(8)
-    let token = get_field(&buf[start..], field_separator);
-    start += token.len() + 1;
-    let begin_string = field_to_tag_value(token);
+    let begin_string = field_to_tag_value(&vec[..p1 - 1]);
     assert!(begin_string.0 == [0x038]); // BeginString(8)
     let begin_string = std::str::from_utf8(begin_string.1).unwrap();
 
-    // BodyLength(9)
-    let token = get_field(&buf[start..], field_separator);
-    start += token.len() + 1;
-    let body_length = field_to_tag_value(token);
+    let body_length = field_to_tag_value(&vec[p1..p2 - 1]);
     assert!(body_length.0 == [0x039]); // BodyLength(9)
     let body_length = std::str::from_utf8(body_length.1).unwrap();
     let body_length: usize = body_length.parse().unwrap();
 
-    // Will consume only 2 first tags to match msg size with BodyLength(9) tag value.
-    // Next read of br will also contain MsgType(35) tag
-    let consume_amt = start;
-
-    // MsgType(35)
-    let token = get_field(&buf[start..], field_separator);
-    let msg_type = field_to_tag_value(token);
-    assert!(msg_type.0 == [0x033, 0x035]); // TAG_MSG_TYPE
-    let msg_type = std::str::from_utf8(msg_type.1).unwrap();
-
-    let sh = StandardHeader::new(begin_string, msg_type, body_length);
-
-    Ok((sh, consume_amt))
+    let sh: StandardHeader = StandardHeader::new(begin_string, body_length);
+    Ok(sh)
 }
 
-pub fn read_standard_trailer(
-    br: &mut dyn BufRead,
-    field_separator: u8,
-) -> std::io::Result<(StandardTrailer, usize)> {
-    let buf = br.fill_buf()?;
-    if buf.len() == 0 {
-        ()
-    };
-
-    let token = get_field(buf, field_separator);
-    let crc = field_to_tag_value(token);
-    assert!(crc.0 == [0x031, 0x030]); // CheckSum(10)
-    let crc_value = std::str::from_utf8(crc.1).unwrap();
-
-    let amt = token.len() + 1;
-
-    Ok((StandardTrailer::new(crc_value), amt))
+pub fn read_crc(br: &mut dyn BufRead, field_separator: u8) -> () {
+    let mut trailer: [u8; 7] = [0; 7]; // Read CRC with ending SOH
+    br.read_exact(&mut trailer).unwrap();
 }
 
 pub fn get_field(buf: &[u8], field_separator: u8) -> &[u8] {
@@ -139,7 +106,10 @@ A field shall be considered malformed if any of the following occurs as a result
     the datatype of the field is data and the field is not immediately preceded by its associated Length field.
 */
 pub fn field_to_tag_value(buf: &[u8]) -> (&[u8], &[u8]) {
-    assert!(buf.len() > 0);
+    assert!(
+        buf.len() > 0,
+        "Can not read tag and value from empty field buffer"
+    );
 
     let mut i: usize = 0;
     for v in buf {
